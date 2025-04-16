@@ -177,17 +177,21 @@ const Arrow = styled.div<{ direction: 'left' | 'right'; isVisible: boolean }>`
 
 const Controls = styled.div<{ isVisible: boolean }>`
   position: absolute;
-  top: calc(100% + 20px);
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: -80px;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: fit-content;
   background-color: rgba(0, 0, 0, 0.7);
   color: white;
-  padding: 10px 20px;
+  padding: 12px 24px;
   border-radius: 20px;
   font-size: 14px;
   opacity: ${props => props.isVisible ? 1 : 0};
   transition: opacity 0.5s ease;
   pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
 `;
 
 const GameControls = styled.div`
@@ -330,11 +334,11 @@ const FeedbackText = styled.div<{ type: 'success' | 'fail' }>`
   animation: ${props => props.type === 'success' ? successAnimation : failAnimation} 1s ease-out;
 `;
 
-const ScoreChange = styled.div<{ type: 'positive' | 'negative' }>`
+const ScoreChange = styled.div<{ type: 'positive' | 'negative'; offset?: number }>`
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(${props => props.offset ? `calc(-50% + ${props.offset}px)` : '-50%'}, -50%);
   font-size: 32px;
   font-weight: bold;
   color: ${props => props.type === 'positive' ? '#0066ff' : '#ff4444'};
@@ -351,13 +355,39 @@ const TrueFalseText = styled.div<{ side: 'left' | 'right' }>`
   font-weight: bold;
   color: ${props => props.side === 'left' ? '#ff4444' : '#4CAF50'};
   opacity: 0.8;
-  pointer-events: none;
+  cursor: pointer;
+  padding: 20px;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+
+  &:hover {
+    opacity: 1;
+    transform: translateY(-50%) scale(1.1);
+  }
+
+  &:active {
+    transform: translateY(-50%) scale(0.95);
+  }
 `;
 
-const GameOverCard = styled(CardWrapper)<{ score?: number }>`
-  background: ${props => props.score && props.score >= 0 
-    ? 'linear-gradient(145deg, #2d5a27, #4CAF50)' // Green gradient for positive
-    : 'linear-gradient(145deg, #8b2626, #ff4444)'}; // Red gradient for negative
+interface GameState {
+  score: number;
+  currentCardIndex: number;
+  isGameOver: boolean;
+  gameEndType: 'win' | 'lose' | 'timeout' | undefined;
+  isPaused: boolean;
+  showControls: boolean;
+  timeLeft: number;
+  correctStreak: number;
+  wrongStreak: number;
+  showGameOverAnimation: boolean;
+}
+
+const GameOverCard = styled(CardWrapper)<{ score?: number; gameEndType: 'win' | 'lose' | 'timeout' }>`
+  background: ${props => {
+    if (props.gameEndType === 'win') return 'linear-gradient(145deg, #2d5a27, #4CAF50)';
+    if (props.gameEndType === 'lose') return 'linear-gradient(145deg, #8b2626, #ff4444)';
+    return 'linear-gradient(145deg, #1a237e, #3f51b5)';
+  }};
   color: white;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   border: 2px solid rgba(255, 255, 255, 0.1);
@@ -476,28 +506,47 @@ const LastChanceWarning = styled.div`
   width: 100%;
 `;
 
+const MaxTimerWarning = styled(LastChanceWarning)`
+  color: #4CAF50;  // Green color for "One correct to win"
+`;
+
 // Game configuration
 const CONFIG = {
   TIMER: {
-    INITIAL: 20,
-    MIN: 4,
-    MAX: 60,
-    BONUS: 1,
+    INITIAL: 15,      // Starting time
+    MIN: 3,          // Minimum timer
+    MAX: 30,         // Maximum timer
     HIGH_PERCENTAGE: 0.75,
-    MID_PERCENTAGE: 0.5,
-    LOW_PERCENTAGE: 0.25,
-    QUICK_WRONG_PENALTY: -3,  // Additional timer penalty for quick wrong answers
-    BASE_WRONG_PENALTY: -1,   // Base timer penalty for wrong answers (multiplied by streak)
+    MID_PERCENTAGE: 0.50,
   },
   SCORE: {
-    HIGH_TIME_BONUS: 3,
-    MID_TIME_BONUS: 2,
-    LOW_TIME_BONUS: 1,
-    MIN_TIME_BONUS: 1,
+    // Time-based scoring
+    HIGH_TIME_BONUS: 3,    // 75%+ time remaining
+    MID_TIME_BONUS: 2,     // 50-75% time remaining
+    LOW_TIME_BONUS: 1,     // 0-50% time remaining
+    
+    // Base scoring
+    CORRECT_BASE: 1,       // Base score for correct answer
+    WRONG_BASE: -1,        // Base score for wrong answer
+    
+    // Streak bonuses
+    THREE_STREAK_BONUS: 5,  // Bonus for 3 correct in a row
+    FIVE_STREAK_BONUS: 10,  // Bonus for 5 correct in a row
+    
+    // Negative streak penalties
+    THREE_WRONG_PENALTY: -5,  // Penalty for 3 wrong in a row
+    FIVE_WRONG_PENALTY: -10,  // Penalty for 5 wrong in a row
+    
+    // Win bonus
+    WIN_BONUS: 100,         // Bonus for winning the game
   },
   STREAK: {
-    BONUS_THRESHOLD: 3,
-    MIN_PENALTY: -1,  // Base penalty for wrong answers
+    // Timer adjustments
+    CORRECT_TIMER_BONUS: 1,    // +1s for 3 correct streak
+    FIVE_CORRECT_TIMER_BONUS: 3,  // +3s for 5 correct streak
+    WRONG_TIMER_PENALTY: -1,   // -1s for single wrong
+    THREE_WRONG_TIMER: -3,     // -3s for 3 wrong in a row
+    FIVE_WRONG_TIMER: -5,      // -5s for 5 wrong in a row
   }
 };
 
@@ -656,7 +705,7 @@ const CardGame: React.FC = () => {
   const [isEntering, setIsEntering] = useState(true);
   const [score, setScore] = useState(0);
   const [showFeedback, setShowFeedback] = useState<'success' | 'fail' | null>(null);
-  const [showScoreChange, setShowScoreChange] = useState<{ value: number; type: 'positive' | 'negative' } | null>(null);
+  const [showScoreChange, setShowScoreChange] = useState<{ value: number; type: 'positive' | 'negative'; offset?: number } | null>(null);
   const [highScore, setHighScore] = useState(0);
   const cardRef = useRef<HTMLDivElement>(null);
   const [showControls, setShowControls] = useState(true);
@@ -674,6 +723,21 @@ const CardGame: React.FC = () => {
   const [showAddTime, setShowAddTime] = useState<boolean>(false);
   const [cardCount, setCardCount] = useState<number>(0);
   const [showReduceTime, setShowReduceTime] = useState<number | null>(null);
+  const [gameEndType, setGameEndType] = useState<'win' | 'lose' | 'timeout' | null>(null);
+  const [correctStreak, setCorrectStreak] = useState(0);
+
+  const handlePause = useCallback(() => {
+    setIsPaused(true);
+    setTimeout(() => {
+      const newCards = [...cards];
+      newCards[currentCardIndex] = generateEquation();
+      setCards(newCards);
+    }, 150);
+  }, [cards, currentCardIndex]);
+
+  const handleUnpause = useCallback(() => {
+    setIsPaused(false);
+  }, []);
 
   const handleRestart = useCallback(() => {
     setCards(generateCards(10));
@@ -690,19 +754,6 @@ const CardGame: React.FC = () => {
     setCardCount(0);
     setConsecutiveCorrect(0);
   }, []);
-
-  const handlePause = () => {
-    setIsPaused(true);
-    setTimeout(() => {
-      const newCards = [...cards];
-      newCards[currentCardIndex] = generateEquation();
-      setCards(newCards);
-    }, 150);
-  };
-
-  const handleUnpause = () => {
-    setIsPaused(false);
-  };
 
   const handleSwipe = useCallback((direction: 'left' | 'right') => {
     if (isExiting) return;
@@ -749,123 +800,154 @@ const CardGame: React.FC = () => {
     setExitDirection(direction);
     setShowFeedback(isCorrect ? 'success' : 'fail');
 
-    let scoreChange;
+    let timeBasedScore = 0;
+    let streakScore = 0;
     const timeProgress = timeLeft / roundTimer;
 
     if (isCorrect) {
-      // Score based on time remaining
-      if (timeLeft <= CONFIG.TIMER.MIN) {
-        scoreChange = CONFIG.SCORE.MIN_TIME_BONUS;
+      // Time-based scoring only
+      if (timeProgress > CONFIG.TIMER.HIGH_PERCENTAGE) {
+        timeBasedScore = CONFIG.SCORE.HIGH_TIME_BONUS;  // +3
+      } else if (timeProgress > CONFIG.TIMER.MID_PERCENTAGE) {
+        timeBasedScore = CONFIG.SCORE.MID_TIME_BONUS;   // +2
       } else {
-        if (timeProgress > CONFIG.TIMER.HIGH_PERCENTAGE) scoreChange = CONFIG.SCORE.HIGH_TIME_BONUS;
-        else if (timeProgress > CONFIG.TIMER.MID_PERCENTAGE) scoreChange = CONFIG.SCORE.MID_TIME_BONUS;
-        else if (timeProgress > CONFIG.TIMER.LOW_PERCENTAGE) scoreChange = CONFIG.SCORE.LOW_TIME_BONUS;
-        else scoreChange = 0;
+        timeBasedScore = CONFIG.SCORE.LOW_TIME_BONUS;   // +1
       }
 
-      // Decrease penalty by 1 (but not below -1)
-      setWrongStreak(prev => Math.max(0, prev - 1));
-
-      // Handle consecutive correct answers
-      setConsecutiveCorrect(prev => {
-        const newCount = prev + 1;
-        if (newCount === CONFIG.STREAK.BONUS_THRESHOLD) {
-          // Add time bonus to round timer
-          setRoundTimer(prevTime => {
-            const newTime = Math.min(prevTime + CONFIG.TIMER.BONUS, CONFIG.TIMER.MAX);
-            if (newTime > prevTime) {
-              setShowAddTime(true);
-              setTimeout(() => setShowAddTime(false), 1000);
-            }
-            return newTime;
-          });
-          return 0;
-        }
-        return newCount;
-      });
-    } else {
-      // Wrong answer
-      setWrongStreak(prev => prev + 1);
-      
-      // Base score penalty from wrong streak
-      scoreChange = Math.max(CONFIG.STREAK.MIN_PENALTY, -1 * (wrongStreak + 1));
-      setConsecutiveCorrect(0);
-      
-      // If at minimum time, end the game
-      if (timeLeft <= CONFIG.TIMER.MIN) {
-        setIsGameOver(true);
-      } else {
-        // Calculate timer penalty based on wrong streak
-        const streakPenalty = CONFIG.TIMER.BASE_WRONG_PENALTY * (wrongStreak + 1);
+      // Handle correct streaks
+      setCorrectStreak(prev => {
+        const newStreak = prev + 1;
         
-        // Apply base timer penalty from streak
-        setRoundTimer(prev => Math.max(CONFIG.TIMER.MIN, prev + streakPenalty));
-        setTimeLeft(prev => Math.max(CONFIG.TIMER.MIN, prev + streakPenalty));
-
-        // Show timer reduction for streak penalty
-        setShowReduceTime(streakPenalty);
-        setTimeout(() => setShowReduceTime(null), 1000);
-
-        // Apply additional timer penalty if answered too quickly
-        if (timeProgress > CONFIG.TIMER.HIGH_PERCENTAGE) {
-          setRoundTimer(prev => Math.max(CONFIG.TIMER.MIN, prev + CONFIG.TIMER.QUICK_WRONG_PENALTY));
-          setTimeLeft(prev => Math.max(CONFIG.TIMER.MIN, prev + CONFIG.TIMER.QUICK_WRONG_PENALTY));
-          
-          // Show additional timer reduction for quick wrong answer
-          setTimeout(() => {
-            setShowReduceTime(CONFIG.TIMER.QUICK_WRONG_PENALTY);
-            setTimeout(() => setShowReduceTime(null), 1000);
-          }, 200); // Slight delay to show after streak penalty
+        if (newStreak === 5) {
+          streakScore = CONFIG.SCORE.FIVE_STREAK_BONUS;  // +10
+          setRoundTimer(prevTime => Math.min(prevTime + CONFIG.STREAK.FIVE_CORRECT_TIMER_BONUS, CONFIG.TIMER.MAX));
+          setTimeLeft(prevTime => Math.min(prevTime + CONFIG.STREAK.FIVE_CORRECT_TIMER_BONUS, CONFIG.TIMER.MAX));
+          return 0;  // Reset streak after bonus
         }
-      }
-    }
-
-    setShowScoreChange({ 
-      value: scoreChange, 
-      type: scoreChange >= 0 ? 'positive' : 'negative' 
-    });
-    
-    setTimeout(() => {
-      const newScore = score + scoreChange;
+        
+        if (newStreak === 3) {
+          streakScore = CONFIG.SCORE.THREE_STREAK_BONUS;  // +5
+          setRoundTimer(prevTime => Math.min(prevTime + CONFIG.STREAK.CORRECT_TIMER_BONUS, CONFIG.TIMER.MAX));
+          setTimeLeft(prevTime => Math.min(prevTime + CONFIG.STREAK.CORRECT_TIMER_BONUS, CONFIG.TIMER.MAX));
+        }
+        
+        return newStreak;
+      });
       
-      // Set score and check for game over FIRST, before any other state updates
-      setScore(newScore);
-      
-      if (newScore > highScore) {
-        setHighScore(newScore);
-      }
+      setWrongStreak(0);  // Reset wrong streak
 
-      // Check for game over conditions immediately
-      if (newScore < 0) {
+      // Check for win condition (max timer reached)
+      if (roundTimer >= CONFIG.TIMER.MAX) {
+        streakScore += CONFIG.SCORE.WIN_BONUS;  // +100
+        setGameEndType('win');
         setIsGameOver(true);
-        setIsTimerActive(false); // Stop the timer immediately
-        setTimeLeft(0); // Reset timer display
+      }
+    } else {
+      // Wrong answer handling - Time-based penalties only
+      if (timeProgress > CONFIG.TIMER.HIGH_PERCENTAGE) {
+        timeBasedScore = -CONFIG.SCORE.HIGH_TIME_BONUS;  // -3
+      } else if (timeProgress > CONFIG.TIMER.MID_PERCENTAGE) {
+        timeBasedScore = -CONFIG.SCORE.MID_TIME_BONUS;   // -2
+      } else {
+        timeBasedScore = -CONFIG.SCORE.LOW_TIME_BONUS;   // -1
+      }
+
+      // Handle wrong streaks
+      setWrongStreak(prev => {
+        const newStreak = prev + 1;
+        
+        if (newStreak === 5) {
+          streakScore = CONFIG.SCORE.FIVE_WRONG_PENALTY;  // -10
+          setRoundTimer(prevTime => Math.max(prevTime + CONFIG.STREAK.FIVE_WRONG_TIMER, CONFIG.TIMER.MIN));
+          setTimeLeft(prevTime => Math.max(prevTime + CONFIG.STREAK.FIVE_WRONG_TIMER, CONFIG.TIMER.MIN));
+          return 0;  // Reset streak after penalty
+        }
+        
+        if (newStreak === 3) {
+          streakScore = CONFIG.SCORE.THREE_WRONG_PENALTY;  // -5
+          setRoundTimer(prevTime => Math.max(prevTime + CONFIG.STREAK.THREE_WRONG_TIMER, CONFIG.TIMER.MIN));
+          setTimeLeft(prevTime => Math.max(prevTime + CONFIG.STREAK.THREE_WRONG_TIMER, CONFIG.TIMER.MIN));
+        }
+
+        // Single wrong penalty for timer
+        setRoundTimer(prevTime => Math.max(prevTime + CONFIG.STREAK.WRONG_TIMER_PENALTY, CONFIG.TIMER.MIN));
+        setTimeLeft(prevTime => Math.max(prevTime + CONFIG.STREAK.WRONG_TIMER_PENALTY, CONFIG.TIMER.MIN));
+        
+        return newStreak;
+      });
+      
+      setCorrectStreak(0);  // Reset correct streak
+
+      // Check if we're at LAST CHANCE (minimum time)
+      if (timeLeft <= CONFIG.TIMER.MIN) {
+        // Always show lose card for wrong answers
+        setGameEndType('lose');
+        setIsGameOver(true);
+        setIsTimerActive(false);
+        setTimeLeft(0);
         setIsExiting(false);
         setPosition({ x: 0, y: 0 });
         setShowFeedback(null);
         setShowScoreChange(null);
-        return; // Exit early to prevent further state updates
+        return;
       }
+    }
 
-      // Only continue with game logic if not game over
-      if (!isGameOver) {
-        if (currentCardIndex >= cards.length - 3) {
-          const newCards = [...cards, ...generateCards(5)];
-          setCards(newCards);
-        }
-        setCurrentCardIndex(prev => prev + 1);
-        if (isCorrect) {
-          setTimeLeft(roundTimer);
-        }
-        setIsTimerActive(true);
+    // Show time-based score change immediately
+    setShowScoreChange({ 
+      value: timeBasedScore, 
+      type: timeBasedScore >= 0 ? 'positive' : 'negative' 
+    });
+
+    // Show streak bonus/penalty with a slight delay
+    if (streakScore !== 0) {
+      setTimeout(() => {
+        setShowScoreChange({ 
+          value: streakScore, 
+          type: streakScore >= 0 ? 'positive' : 'negative',
+          offset: 40  // Offset to the right
+        });
+      }, 200);
+    }
+
+    // Update score and check if game should end
+    const finalScore = score + timeBasedScore + streakScore;
+    if (finalScore < 0) {
+      setScore(finalScore);
+      setGameEndType('lose');
+      setIsGameOver(true);
+      setIsTimerActive(false);
+      setTimeLeft(0);
+      setIsExiting(false);
+      setPosition({ x: 0, y: 0 });
+      setShowFeedback(null);
+      setShowScoreChange(null);
+      return;
+    }
+
+    setScore(finalScore);
+    
+    // Continue game if not over
+    if (!isGameOver) {
+      if (currentCardIndex >= cards.length - 3) {
+        const newCards = [...cards, ...generateCards(5)];
+        setCards(newCards);
       }
+      setCurrentCardIndex(prev => prev + 1);
+      if (isCorrect) {
+        setTimeLeft(roundTimer);
+      }
+      setIsTimerActive(true);
+    }
 
+    // Reset animation states after a delay
+    setTimeout(() => {
       setIsExiting(false);
       setPosition({ x: 0, y: 0 });
       setShowFeedback(null);
       setShowScoreChange(null);
     }, 250);
-  }, [currentCardIndex, cards, isExiting, score, highScore, wrongStreak, showingHighScore, isGameOver, timeLeft, roundTimer]);
+  }, [currentCardIndex, cards, isExiting, score, highScore, timeLeft, roundTimer, isGameOver, hasSwipedFirstCard, showingHighScore, handleRestart]);
 
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -943,10 +1025,11 @@ const CardGame: React.FC = () => {
       setTimeLeft(prev => {
         if (prev <= 0) {
           clearInterval(timer);
+          setGameEndType('timeout');
           setIsGameOver(true);
           return 0;
         }
-        return prev - 0.1; // Update every 100ms for smooth animation
+        return prev - 0.1;
       });
     }, 100);
 
@@ -965,7 +1048,7 @@ const CardGame: React.FC = () => {
                 handlePause();
               }
             }}>
-              {isPaused ? 'Unpause' : 'Pause'} <span>(P)</span>
+              {isPaused ? 'Resume' : 'Pause'} <span>(P)</span>
             </ControlButton>
           )}
           <ControlButton isRestart negative={isGameOver} onClick={handleRestart}>
@@ -975,18 +1058,31 @@ const CardGame: React.FC = () => {
         <ScoreDisplay>Score: {score}</ScoreDisplay>
         <HighScoreDisplay>High Score: {highScore}</HighScoreDisplay>
         
-        <TrueFalseText side="left">← NO</TrueFalseText>
-        <TrueFalseText side="right">YES →</TrueFalseText>
+        <TrueFalseText 
+          side="left" 
+          onClick={() => !isPaused && handleSwipe('left')}
+        >
+          ← NO
+        </TrueFalseText>
+        <TrueFalseText 
+          side="right"
+          onClick={() => !isPaused && handleSwipe('right')}
+        >
+          YES →
+        </TrueFalseText>
         
         {showFeedback && <FeedbackText type={showFeedback}>{showFeedback === 'success' ? '✓' : '✗'}</FeedbackText>}
         {showScoreChange && (
-          <ScoreChange type={showScoreChange.type}>
+          <ScoreChange 
+            type={showScoreChange.type} 
+            offset={showScoreChange.offset}
+          >
             {showScoreChange.type === 'positive' ? '+' : ''}{showScoreChange.value}
           </ScoreChange>
         )}
         
         <CardStack>
-          <BlurOverlay active={isPaused}>PAUSED</BlurOverlay>
+          <BlurOverlay active={isPaused}>Paused</BlurOverlay>
           {!showingHighScore && !isGameOver && currentCardIndex < cards.length && (
             <CardWrapper
               ref={cardRef}
@@ -1045,26 +1141,38 @@ const CardGame: React.FC = () => {
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
               score={score}
+              gameEndType={gameEndType || 'timeout'}
             >
               <GameOverContent>
-                <GameOverTitle>Game Over!</GameOverTitle>
+                <GameOverTitle>
+                  {gameEndType === 'win' ? 'Congratulations!' : 
+                   gameEndType === 'lose' ? 'Game Over' :
+                   'Time\u2019s Up'}
+                </GameOverTitle>
                 <GameOverScore>{score}</GameOverScore>
                 <ScoreLabel>Final Score</ScoreLabel>
-                <GameOverQuestion>Do you want to play again?</GameOverQuestion>
+                <GameOverQuestion>
+                  {gameEndType === 'win' ? 'Play again?' : 
+                   'Would you like to try again?'}
+                </GameOverQuestion>
               </GameOverContent>
             </GameOverCard>
           )}
+          <Controls isVisible={showControls}>
+            Use ← → or A D keys to swipe cards
+          </Controls>
         </CardStack>
 
-        <Controls isVisible={showControls}>
-          Use ← → or A D keys to swipe cards
-        </Controls>
-
-        {!showControls && !isGameOver && ( // Only show timer after first card and when game is not over
+        {!showControls && !isGameOver && (
           <>
             {timeLeft <= CONFIG.TIMER.MIN ? (
               <>
-                <LastChanceWarning>LAST CHANCE</LastChanceWarning>
+                <LastChanceWarning>Last Chance!</LastChanceWarning>
+                <TimerBar progress={timeLeft / roundTimer} />
+              </>
+            ) : roundTimer >= CONFIG.TIMER.MAX ? (
+              <>
+                <MaxTimerWarning>One Correct to Win!</MaxTimerWarning>
                 <TimerBar progress={timeLeft / roundTimer} />
               </>
             ) : (
