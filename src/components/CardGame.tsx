@@ -838,9 +838,12 @@ const CardGame: React.FC = () => {
 
       // Check for win condition (max timer reached)
       if (roundTimer >= CONFIG.TIMER.MAX) {
-        streakScore += CONFIG.SCORE.WIN_BONUS;  // +100
+        // Add timer-based bonus (timeLeft * 10) to the win bonus
+        streakScore += CONFIG.SCORE.WIN_BONUS + Math.ceil(timeLeft * 10);
         setGameEndType('win');
         setIsGameOver(true);
+        setIsTimerActive(false);  // Stop the timer
+        setTimeLeft(roundTimer);  // Keep the final timer value
       }
     } else {
       // Wrong answer handling - Time-based penalties only
@@ -1150,7 +1153,9 @@ const CardGame: React.FC = () => {
                    'Time\u2019s Up'}
                 </GameOverTitle>
                 <GameOverScore>{score}</GameOverScore>
-                <ScoreLabel>Final Score</ScoreLabel>
+                <ScoreLabel>
+                  {gameEndType === 'win' ? `Final Score (including ${Math.ceil(timeLeft * 10)} time bonus)` : 'Final Score'}
+                </ScoreLabel>
                 <GameOverQuestion>
                   {gameEndType === 'win' ? 'Play again?' : 
                    'Would you like to try again?'}
