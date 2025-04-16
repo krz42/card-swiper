@@ -102,6 +102,51 @@ const fadeOut = keyframes`
   }
 `;
 
+const addTimeAnimation = keyframes`
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-20px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-40px);
+  }
+`;
+
+const pulseAnimation = keyframes`
+  0% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scaleY(3);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+`;
+
+const pulseWarningAnimation = keyframes`
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+`;
+
 const CardContainer = styled.div`
   width: 100%;
   height: 100vh;
@@ -151,6 +196,7 @@ const GameControls = styled.div`
   right: 20px;
   display: flex;
   gap: 10px;
+  z-index: 1;
 `;
 
 const ControlButton = styled.div<{ isRestart?: boolean; negative?: boolean }>`
@@ -158,7 +204,7 @@ const ControlButton = styled.div<{ isRestart?: boolean; negative?: boolean }>`
   color: white;
   padding: 10px 20px;
   border-radius: 20px;
-  font-size: 14px;
+  font-size: 18px;
   cursor: pointer;
   transition: background-color 0.3s ease;
 
@@ -168,6 +214,7 @@ const ControlButton = styled.div<{ isRestart?: boolean; negative?: boolean }>`
 
   span {
     opacity: 0.5;
+    font-size: 14px;
   }
 `;
 
@@ -202,15 +249,9 @@ const ScoreDisplay = styled.div`
   font-size: 18px;
 `;
 
-const HighScoreDisplay = styled.div`
-  position: absolute;
-  top: 20px;
+const HighScoreDisplay = styled(ScoreDisplay)`
   left: 20px;
-  background-color: rgba(0, 0, 0, 0.7);
-  color: white;
-  padding: 10px 20px;
-  border-radius: 20px;
-  font-size: 18px;
+  transform: none;
 `;
 
 const RestartButton = styled.button`
@@ -308,13 +349,15 @@ const TrueFalseText = styled.div<{ side: 'left' | 'right' }>`
   transform: translateY(-50%);
   font-size: 24px;
   font-weight: bold;
-  color: ${props => props.side === 'left' ? '#ff4444' : '#0066ff'};
+  color: ${props => props.side === 'left' ? '#ff4444' : '#4CAF50'};
   opacity: 0.8;
   pointer-events: none;
 `;
 
-const GameOverCard = styled(CardWrapper)`
-  background: linear-gradient(145deg, #2c3e50, #3498db);
+const GameOverCard = styled(CardWrapper)<{ score?: number }>`
+  background: ${props => props.score && props.score >= 0 
+    ? 'linear-gradient(145deg, #2d5a27, #4CAF50)' // Green gradient for positive
+    : 'linear-gradient(145deg, #8b2626, #ff4444)'}; // Red gradient for negative
   color: white;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   border: 2px solid rgba(255, 255, 255, 0.1);
@@ -371,6 +414,92 @@ const ActionHint = styled(TrueFalseText)<{ side: 'left' | 'right' }>`
   border-radius: 20px;
   ${props => props.side === 'left' ? 'left: 10%;' : 'right: 10%;'}
 `;
+
+const AddTimeIndicator = styled.div`
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #4CAF50;
+  font-weight: bold;
+  animation: ${addTimeAnimation} 1s ease-out forwards;
+  pointer-events: none;
+`;
+
+const ReduceTimeIndicator = styled(AddTimeIndicator)`
+  color: #ff4444;
+`;
+
+const TimerBar = styled.div<{ progress: number }>`
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  width: ${props => props.progress * 100}%;
+  background-color: ${props => {
+    if (props.progress > 0.75) return '#4CAF50';
+    if (props.progress > 0.5) return '#FFC107';
+    if (props.progress > 0.25) return '#FF9800';
+    return '#F44336';
+  }};
+  transition: width 0.1s linear, background-color 0.3s ease;
+`;
+
+const TimerNumber = styled.div<{ progress: number }>`
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: ${props => {
+    if (props.progress > 0.75) return '#4CAF50';
+    if (props.progress > 0.5) return '#FFC107';
+    if (props.progress > 0.25) return '#FF9800';
+    return '#F44336';
+  }};
+  font-size: 24px;
+  font-weight: bold;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+`;
+
+const LastChanceWarning = styled.div`
+  position: fixed;
+  bottom: 20px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #ff4444;
+  font-size: 24px;
+  font-weight: bold;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  animation: ${pulseWarningAnimation} 1.5s ease-in-out infinite;
+  margin: 0 auto;
+  width: 100%;
+`;
+
+// Game configuration
+const CONFIG = {
+  TIMER: {
+    INITIAL: 20,
+    MIN: 4,
+    MAX: 60,
+    BONUS: 1,
+    HIGH_PERCENTAGE: 0.75,
+    MID_PERCENTAGE: 0.5,
+    LOW_PERCENTAGE: 0.25,
+    QUICK_WRONG_PENALTY: -3,  // Additional timer penalty for quick wrong answers
+    BASE_WRONG_PENALTY: -1,   // Base timer penalty for wrong answers (multiplied by streak)
+  },
+  SCORE: {
+    HIGH_TIME_BONUS: 3,
+    MID_TIME_BONUS: 2,
+    LOW_TIME_BONUS: 1,
+    MIN_TIME_BONUS: 1,
+  },
+  STREAK: {
+    BONUS_THRESHOLD: 3,
+    MIN_PENALTY: -1,  // Base penalty for wrong answers
+  }
+};
 
 const calculateResult = (num1: number, num2: number, operation: SimpleOperation): number => {
   switch (operation) {
@@ -538,8 +667,15 @@ const CardGame: React.FC = () => {
   const [isGameOver, setIsGameOver] = useState(false);
   const [showGameOverAnimation, setShowGameOverAnimation] = useState(false);
   const [shouldShowEnterAnimation, setShouldShowEnterAnimation] = useState(false);
+  const [timeLeft, setTimeLeft] = useState<number>(CONFIG.TIMER.INITIAL);
+  const [roundTimer, setRoundTimer] = useState<number>(CONFIG.TIMER.INITIAL);
+  const [isTimerActive, setIsTimerActive] = useState<boolean>(false);
+  const [consecutiveCorrect, setConsecutiveCorrect] = useState<number>(0);
+  const [showAddTime, setShowAddTime] = useState<boolean>(false);
+  const [cardCount, setCardCount] = useState<number>(0);
+  const [showReduceTime, setShowReduceTime] = useState<number | null>(null);
 
-  const handleRestart = () => {
+  const handleRestart = useCallback(() => {
     setCards(generateCards(10));
     setCurrentCardIndex(0);
     setScore(0);
@@ -548,7 +684,12 @@ const CardGame: React.FC = () => {
     setShowGameOverAnimation(false);
     setShouldShowEnterAnimation(false);
     setIsEntering(true);
-  };
+    setTimeLeft(CONFIG.TIMER.INITIAL);
+    setRoundTimer(CONFIG.TIMER.INITIAL);
+    setIsTimerActive(false);
+    setCardCount(0);
+    setConsecutiveCorrect(0);
+  }, []);
 
   const handlePause = () => {
     setIsPaused(true);
@@ -600,11 +741,6 @@ const CardGame: React.FC = () => {
       return;
     }
 
-    if (currentCardIndex >= cards.length - 1) {
-      setShowingHighScore(true);
-      return;
-    }
-
     const currentCard = cards[currentCardIndex];
     const isRightAnswer = direction === 'right';
     const isCorrect = currentCard.isCorrect === isRightAnswer;
@@ -614,35 +750,114 @@ const CardGame: React.FC = () => {
     setShowFeedback(isCorrect ? 'success' : 'fail');
 
     let scoreChange;
+    const timeProgress = timeLeft / roundTimer;
+
     if (isCorrect) {
-      scoreChange = 2;
+      // Score based on time remaining
+      if (timeLeft <= CONFIG.TIMER.MIN) {
+        scoreChange = CONFIG.SCORE.MIN_TIME_BONUS;
+      } else {
+        if (timeProgress > CONFIG.TIMER.HIGH_PERCENTAGE) scoreChange = CONFIG.SCORE.HIGH_TIME_BONUS;
+        else if (timeProgress > CONFIG.TIMER.MID_PERCENTAGE) scoreChange = CONFIG.SCORE.MID_TIME_BONUS;
+        else if (timeProgress > CONFIG.TIMER.LOW_PERCENTAGE) scoreChange = CONFIG.SCORE.LOW_TIME_BONUS;
+        else scoreChange = 0;
+      }
+
+      // Decrease penalty by 1 (but not below -1)
       setWrongStreak(prev => Math.max(0, prev - 1));
+
+      // Handle consecutive correct answers
+      setConsecutiveCorrect(prev => {
+        const newCount = prev + 1;
+        if (newCount === CONFIG.STREAK.BONUS_THRESHOLD) {
+          // Add time bonus to round timer
+          setRoundTimer(prevTime => {
+            const newTime = Math.min(prevTime + CONFIG.TIMER.BONUS, CONFIG.TIMER.MAX);
+            if (newTime > prevTime) {
+              setShowAddTime(true);
+              setTimeout(() => setShowAddTime(false), 1000);
+            }
+            return newTime;
+          });
+          return 0;
+        }
+        return newCount;
+      });
     } else {
+      // Wrong answer
       setWrongStreak(prev => prev + 1);
-      scoreChange = -(wrongStreak + 1);
+      
+      // Base score penalty from wrong streak
+      scoreChange = Math.max(CONFIG.STREAK.MIN_PENALTY, -1 * (wrongStreak + 1));
+      setConsecutiveCorrect(0);
+      
+      // If at minimum time, end the game
+      if (timeLeft <= CONFIG.TIMER.MIN) {
+        setIsGameOver(true);
+      } else {
+        // Calculate timer penalty based on wrong streak
+        const streakPenalty = CONFIG.TIMER.BASE_WRONG_PENALTY * (wrongStreak + 1);
+        
+        // Apply base timer penalty from streak
+        setRoundTimer(prev => Math.max(CONFIG.TIMER.MIN, prev + streakPenalty));
+        setTimeLeft(prev => Math.max(CONFIG.TIMER.MIN, prev + streakPenalty));
+
+        // Show timer reduction for streak penalty
+        setShowReduceTime(streakPenalty);
+        setTimeout(() => setShowReduceTime(null), 1000);
+
+        // Apply additional timer penalty if answered too quickly
+        if (timeProgress > CONFIG.TIMER.HIGH_PERCENTAGE) {
+          setRoundTimer(prev => Math.max(CONFIG.TIMER.MIN, prev + CONFIG.TIMER.QUICK_WRONG_PENALTY));
+          setTimeLeft(prev => Math.max(CONFIG.TIMER.MIN, prev + CONFIG.TIMER.QUICK_WRONG_PENALTY));
+          
+          // Show additional timer reduction for quick wrong answer
+          setTimeout(() => {
+            setShowReduceTime(CONFIG.TIMER.QUICK_WRONG_PENALTY);
+            setTimeout(() => setShowReduceTime(null), 1000);
+          }, 200); // Slight delay to show after streak penalty
+        }
+      }
     }
 
     setShowScoreChange({ 
       value: scoreChange, 
-      type: isCorrect ? 'positive' : 'negative' 
+      type: scoreChange >= 0 ? 'positive' : 'negative' 
     });
     
     setTimeout(() => {
       const newScore = score + scoreChange;
+      
+      // Set score and check for game over FIRST, before any other state updates
       setScore(newScore);
       
       if (newScore > highScore) {
         setHighScore(newScore);
       }
 
+      // Check for game over conditions immediately
       if (newScore < 0) {
         setIsGameOver(true);
-      } else {
+        setIsTimerActive(false); // Stop the timer immediately
+        setTimeLeft(0); // Reset timer display
+        setIsExiting(false);
+        setPosition({ x: 0, y: 0 });
+        setShowFeedback(null);
+        setShowScoreChange(null);
+        return; // Exit early to prevent further state updates
+      }
+
+      // Only continue with game logic if not game over
+      if (!isGameOver) {
         if (currentCardIndex >= cards.length - 3) {
           const newCards = [...cards, ...generateCards(5)];
           setCards(newCards);
         }
         setCurrentCardIndex(prev => prev + 1);
+        if (isCorrect) {
+          setTimeLeft(roundTimer);
+        }
+        setIsTimerActive(true);
       }
 
       setIsExiting(false);
@@ -650,7 +865,7 @@ const CardGame: React.FC = () => {
       setShowFeedback(null);
       setShowScoreChange(null);
     }, 250);
-  }, [currentCardIndex, cards, isExiting, score, hasSwipedFirstCard, highScore, wrongStreak, showingHighScore, isGameOver]);
+  }, [currentCardIndex, cards, isExiting, score, highScore, wrongStreak, showingHighScore, isGameOver, timeLeft, roundTimer]);
 
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -720,6 +935,24 @@ const CardGame: React.FC = () => {
   const showLeftArrow = position.x < -20;
   const showRightArrow = position.x > 20;
 
+  // Timer logic
+  useEffect(() => {
+    if (!isTimerActive || isPaused) return;
+    
+    const timer = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 0) {
+          clearInterval(timer);
+          setIsGameOver(true);
+          return 0;
+        }
+        return prev - 0.1; // Update every 100ms for smooth animation
+      });
+    }, 100);
+
+    return () => clearInterval(timer);
+  }, [isTimerActive, isPaused]);
+
   return (
     <ThemeProvider theme={{ score }}>
       <CardContainer>
@@ -742,8 +975,8 @@ const CardGame: React.FC = () => {
         <ScoreDisplay>Score: {score}</ScoreDisplay>
         <HighScoreDisplay>High Score: {highScore}</HighScoreDisplay>
         
-        <TrueFalseText side="left">← FALSE</TrueFalseText>
-        <TrueFalseText side="right">TRUE →</TrueFalseText>
+        <TrueFalseText side="left">← NO</TrueFalseText>
+        <TrueFalseText side="right">YES →</TrueFalseText>
         
         {showFeedback && <FeedbackText type={showFeedback}>{showFeedback === 'success' ? '✓' : '✗'}</FeedbackText>}
         {showScoreChange && (
@@ -787,6 +1020,7 @@ const CardGame: React.FC = () => {
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
+              score={score}
             >
               <GameOverContent>
                 <GameOverTitle>Current High Score</GameOverTitle>
@@ -810,6 +1044,7 @@ const CardGame: React.FC = () => {
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
+              score={score}
             >
               <GameOverContent>
                 <GameOverTitle>Game Over!</GameOverTitle>
@@ -824,6 +1059,28 @@ const CardGame: React.FC = () => {
         <Controls isVisible={showControls}>
           Use ← → or A D keys to swipe cards
         </Controls>
+
+        {!showControls && !isGameOver && ( // Only show timer after first card and when game is not over
+          <>
+            {timeLeft <= CONFIG.TIMER.MIN ? (
+              <>
+                <LastChanceWarning>LAST CHANCE</LastChanceWarning>
+                <TimerBar progress={timeLeft / roundTimer} />
+              </>
+            ) : (
+              <>
+                <TimerNumber progress={timeLeft / roundTimer}>
+                  {Math.max(0, Math.ceil(timeLeft))}s
+                </TimerNumber>
+                <TimerBar progress={timeLeft / roundTimer} />
+              </>
+            )}
+          </>
+        )}
+        {showAddTime && !isGameOver && <AddTimeIndicator>+1s</AddTimeIndicator>}
+        {showReduceTime && !isGameOver && (
+          <ReduceTimeIndicator>{showReduceTime}s</ReduceTimeIndicator>
+        )}
       </CardContainer>
     </ThemeProvider>
   );
